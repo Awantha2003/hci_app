@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// MindCheck Firestore security rules.
+// users: Shanikha (auth/profile). Booking, chat, availability: Rathnayaka.
+// Other members: add your collections at the bottom.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    match /users/{userId} {
+
+      // A signed-in user can create their own profile
+      allow create: if signedIn() && request.auth.uid == userId;
+
+      // A user can read their own profile
+      allow read: if signedIn() && request.auth.uid == userId;
+
+      // A user can update their own profile
+      allow update: if signedIn() && request.auth.uid == userId;
+
+      // Users cannot delete their profile from the app
+      allow delete: if false;
+
+      // Booking: any signed-in student can see counselor profiles
+      // (name, title, specialization) to choose who to book.
+      allow read: if signedIn() && resource.data.role == 'counselor';
+
+      // TEMPORARY for the demo: lets the "Add demo counselors" button create
+      // sample counselor profiles. Remove before the final submission.
+      // Only for the sample "counselor_..." ids, so real users' profiles
+      // can never be overwritten by it.
+      allow create, update: if signedIn()
+                            && userId.matches('counselor_.*')
+                            && request.resource.data.role == 'counselor';
+    }
+
+    // ---- Booking (appointments + one document per taken slot) ----
+    match /appointments/{id} {
+      allow read, write: if signedIn();
+    }
+    match /booked_slots/{slotId} {
+      // create only: an existing (taken) slot can never be overwritten,
+      // which is what prevents double booking.
+      allow read, create, delete: if signedIn();
+    }
+
+    // ---- Counselor availability (weekly hours, meeting types, days off) ----
+    match /availability/{counselorId} {
+      allow read, write: if signedIn();
+    }
+
+    // ---- Anonymous chat ----
+    match /chats/{threadId} {
+      allow read, write: if signedIn();
+      match /messages/{messageId} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    // ---- Other features (mood, resources, privacy, notifications, admin) ----
+    // add rules here
+  }
+}
+
+// After the login feature is merged (every student/counselor has a real uid),
+// tighten the booking/chat rules, e.g.:
+//   appointments: read/update only if request.auth.uid is the studentId or
+//                 counselorId; create only with studentId == request.auth.uid
+//   availability: write only if request.auth.uid == counselorId
+//   messages:     create only with senderId == request.auth.uid
